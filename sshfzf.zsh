@@ -58,5 +58,5 @@ sshfzf-tree() {
     }'
 }
 
-compdef _sshfzf sshfzf 2>/dev/null || true
-_sshfzf() { _files -W "${SSHFZF_HOSTS:h}" }
+# No completion function here: sshfzf takes no arguments, and zsh already
+# completes `ssh` from the generated ~/.ssh/config on its own.

@@ -12,7 +12,6 @@
 # Applied to every host. A host that sets the same key overrides it.
 defaults:
   user: dor1
-  preferred_authentications: publickey
 
 hosts:
   # A bastion: reached directly, and named by proxy_jump below.

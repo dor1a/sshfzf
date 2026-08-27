@@ -59,7 +59,39 @@ The preview runs `ssh -G`, which resolves the config the way ssh itself will —
 the hostname a pattern expands to, the user, the jump host. It touches no
 network, so it is instant even for hosts behind a bastion.
 
-## Adding a host
+## Managing hosts
+
+Every command edits `hosts.yaml` and regenerates immediately, so the ssh config
+is never a change behind. Omit the name and you get a picker rather than a
+usage error.
+
+| | |
+|---|---|
+| `./generate.py add` | asks for each field; the group comes from an fzf list of the ones in use, or type a new path |
+| `./generate.py add <name> <group> <hostname>` | same, for scripts. `-p` port, `-u` user, `-j` proxy jump, `-i` identity file |
+| `./generate.py set` | pick one, then `-u root`, `-p 2222`, `--unset port`. Fields you do not name are left alone |
+| `./generate.py remove` | pick with tab to mark several; escape does nothing |
+| `./generate.py --tree` | the whole tree |
+
+`hosts.yaml` stays plain YAML and edits are made on the text, so comments and
+ordering survive — which means editing it by hand still works when that is
+faster than a command.
+
+## Importing from MobaXterm
+
+```sh
+./import-mobaxterm.py ~/AppData/Roaming/MobaXterm/MobaXterm.ini -o hosts.yaml
+```
+
+`SubRep=` in each `[Bookmarks_N]` section is the folder path, so the tree comes
+across without being retyped.
+
+⚠️ Check `user` afterwards. MobaXterm stores a credential *name* where the user
+belongs, and the two need not match — `aws_admin` logging in as `admin`
+is exactly the case that catches you. `proxy_jump` and `identity_file` do not
+exist in MobaXterm's format and have to be added.
+
+## The host schema
 
 ```yaml
 hosts:

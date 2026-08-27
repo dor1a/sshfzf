@@ -6,6 +6,10 @@ kept the same sixty-nine names in .ssh/config and .ssh/hosts and maintained both
 by hand, and by the time it was looked at they had already drifted apart.
 
     ./generate.py              write both files
+    ./generate.py add                      ask for each field
+    ./generate.py add <name> <group> <hostname> [-p PORT] [-u USER] [-j JUMP]
+    ./generate.py set <name> [-u USER] [-p PORT] [-j JUMP] [--unset port]
+    ./generate.py remove <name>...
     ./generate.py --tree       print the host tree and exit
     ./generate.py --check      validate hosts.yaml and exit
     ./generate.py --dry-run    print what would be written
@@ -142,12 +146,230 @@ def write(path, text, mode=0o600):
     print(f"wrote {path}")
 
 
+def pick(prompt, multi=False):
+    """Choose host names with fzf. Naming an entry to change means knowing its
+    name, and the whole point of this tool is not having to."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("fzf"):
+        sys.exit("name required (or install fzf to pick one)")
+    _, hosts = load()
+    listing = "\n".join(f"{h['group']}/{h['name']}" for h in hosts)
+    cmd = ["fzf", "--layout=reverse", "--height=60%", f"--prompt={prompt} > "]
+    if multi:
+        cmd += ["--multi", "--header=tab to mark, enter to confirm"]
+    # stdout only: fzf draws its interface on stderr, so capturing that leaves
+    # the screen blank and the picker exits at once.
+    out = subprocess.run(cmd, input=listing, text=True, stdout=subprocess.PIPE).stdout
+    names = [l.rsplit("/", 1)[-1] for l in out.splitlines() if l.strip()]
+    if not names:
+        sys.exit(0)
+    return names
+
+
+def read_source():
+    return SOURCE.read_text(encoding="utf-8").splitlines(keepends=True)
+
+
+def find_block(lines, name):
+    """Line span of one host entry, or None.
+
+    Edits happen on the text rather than through a YAML round-trip, because a
+    round-trip drops the comments and reorders what it does not understand. The
+    format is a flat list, so a block runs from its `- name:` to the next one.
+    """
+    start = None
+    for i, line in enumerate(lines):
+        if start is None:
+            if line.strip() == f"- name: {name}":
+                start = i
+            continue
+        # The next entry, or the end of the hosts list.
+        if line.startswith("  - ") or (line.strip() and not line.startswith("    ") and not line.startswith("  ")):
+            return start, i
+    return (start, len(lines)) if start is not None else None
+
+
+def write_source(lines):
+    SOURCE.write_text("".join(lines), encoding="utf-8")
+
+
+def cmd_remove(names):
+    lines = read_source()
+    gone, missing = [], []
+    for name in names:
+        span = find_block(lines, name)
+        if not span:
+            missing.append(name)
+            continue
+        i, j = span
+        # Keep the file tidy: take the blank line the block was followed by.
+        while j > i and lines[j - 1].strip() == "":
+            j -= 1
+        del lines[i:j]
+        while i < len(lines) and lines[i].strip() == "":
+            del lines[i]
+        lines.insert(i, "\n")
+        gone.append(name)
+    if missing:
+        sys.exit("not in " + SOURCE.name + ": " + ", ".join(missing))
+    write_source(lines)
+    print(f"removed {', '.join(gone)} from {SOURCE.name}")
+
+
+def ask(label, default="", required=False):
+    try:
+        answer = input(f"{label}{f' [{default}]' if default else ''}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        sys.exit("\ncancelled")
+    answer = answer or default
+    if required and not answer:
+        sys.exit(f"{label} is required")
+    return answer
+
+
+def pick_group():
+    """Offer the groups already in use, since a new host almost always joins
+    one. fzf's own query is the escape hatch: type a path that does not exist
+    and print-query returns it."""
+    import shutil
+    import subprocess
+
+    _, hosts = load()
+    groups = sorted({h["group"] for h in hosts})
+    if not shutil.which("fzf"):
+        return ask("group", required=True)
+    out = subprocess.run(
+        ["fzf", "--layout=reverse", "--height=60%", "--print-query",
+         "--prompt=group > ", "--header=pick one, or type a new path and press enter"],
+        input="\n".join(groups), text=True, stdout=subprocess.PIPE,
+    ).stdout.splitlines()
+    # --print-query puts the typed text first, the selection second if any.
+    if len(out) > 1 and out[1].strip():
+        return out[1].strip()
+    return out[0].strip() if out and out[0].strip() else sys.exit(0)
+
+
+def cmd_add_interactive():
+    name = ask("name", required=True)
+    group = pick_group()
+    hostname = ask("hostname", required=True)
+
+    class A:
+        pass
+
+    a = A()
+    a.name, a.group, a.hostname = name, group, hostname
+    a.port = ask("port", "22")
+    a.port = "" if a.port == "22" else a.port
+    a.user = ask("user (blank = defaults)")
+    a.proxy_jump = ask("proxy_jump (blank = none)")
+    a.identity_file = ""
+    return a
+
+
+def cmd_set(args):
+    """Change fields on one host. Keys not named are left alone, which is what
+    separates this from removing and re-adding."""
+    lines = read_source()
+    span = find_block(lines, args.name)
+    if not span:
+        sys.exit(f"{args.name} is not in {SOURCE.name}")
+    i, j = span
+
+    changes = {k: v for k, v in (
+        ("group", args.group), ("hostname", args.hostname), ("port", args.port),
+        ("user", args.user), ("proxy_jump", args.proxy_jump),
+        ("identity_file", args.identity_file)) if v is not None}
+    if not changes and not args.unset:
+        sys.exit("nothing to change")
+
+    block = lines[i:j]
+    for key, value in changes.items():
+        for k, line in enumerate(block):
+            if line.strip().startswith(f"{key}:"):
+                block[k] = f"    {key}: {value}\n"
+                break
+        else:
+            # Not present yet: keep `name` first and append the rest in order.
+            block.insert(1 if key == "group" else len(block), f"    {key}: {value}\n")
+    for key in args.unset or []:
+        block = [l for l in block if not l.strip().startswith(f"{key}:")]
+
+    lines[i:j] = block
+    write_source(lines)
+    told = ", ".join(f"{k}={v}" for k, v in changes.items())
+    if args.unset:
+        told += (", " if told else "") + "unset " + ", ".join(args.unset)
+    print(f"{args.name}: {told}")
+
+
+def cmd_add(args):
+    lines = read_source()
+    if find_block(lines, args.name):
+        sys.exit(f"{args.name} is already in {SOURCE.name}")
+
+    block = [f"  - name: {args.name}\n", f"    group: {args.group}\n",
+             f"    hostname: {args.hostname}\n"]
+    for key, value in (("port", args.port), ("user", args.user),
+                       ("proxy_jump", args.proxy_jump), ("identity_file", args.identity_file)):
+        if value:
+            block.append(f"    {key}: {value}\n")
+    block.append("\n")
+
+    # Append to the end of the hosts list.
+    end = len(lines)
+    while end > 0 and lines[end - 1].strip() == "":
+        end -= 1
+    lines[end:end] = ["\n"] + block if lines and lines[end - 1].strip() else block
+    write_source(lines)
+    print(f"added {args.name} to {SOURCE.name}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tree", action="store_true", help="print the host tree")
     ap.add_argument("--check", action="store_true", help="validate only")
     ap.add_argument("--dry-run", action="store_true", help="print instead of writing")
+    sub = ap.add_subparsers(dest="cmd")
+
+    a = sub.add_parser("add", help="add a host to hosts.yaml, then regenerate")
+    a.add_argument("name", nargs="?", help="omit all three to be asked")
+    a.add_argument("group", nargs="?")
+    a.add_argument("hostname", nargs="?")
+    a.add_argument("-p", "--port")
+    a.add_argument("-u", "--user")
+    a.add_argument("-j", "--proxy-jump")
+    a.add_argument("-i", "--identity-file")
+
+    r = sub.add_parser("remove", help="drop hosts from hosts.yaml, then regenerate")
+    r.add_argument("name", nargs="*", help="omit to pick with fzf")
+
+    e = sub.add_parser("set", help="change fields on one host, then regenerate")
+    e.add_argument("name", nargs="?", help="omit to pick with fzf")
+    e.add_argument("-g", "--group")
+    e.add_argument("-H", "--hostname")
+    e.add_argument("-p", "--port")
+    e.add_argument("-u", "--user")
+    e.add_argument("-j", "--proxy-jump")
+    e.add_argument("-i", "--identity-file")
+    e.add_argument("--unset", action="append", metavar="KEY",
+                   help="drop a field; repeatable")
+
     args = ap.parse_args()
+
+    # Both edit the file and then fall through to a normal regenerate, so the
+    # ssh config never sits one change behind hosts.yaml.
+    if args.cmd == "add":
+        # Naming three positionals is fine in a script and unhelpful by hand.
+        cmd_add(args if args.name else cmd_add_interactive())
+    elif args.cmd == "remove":
+        cmd_remove(args.name or pick("remove", multi=True))
+    elif args.cmd == "set":
+        if not args.name:
+            args.name = pick("set")[0]
+        cmd_set(args)
 
     defaults, hosts = load()
     validate(hosts)
