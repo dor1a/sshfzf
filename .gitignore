@@ -1,0 +1,6 @@
+# Your real host list. hosts.example.yaml is the tracked schema.
+hosts.yaml
+
+# Generated into ~/.ssh by generate.py, never kept here
+config
+hosts

@@ -1,0 +1,37 @@
+# Every host is written here once. generate.py turns this into ~/.ssh/config and
+# into the flat list sshfzf reads, so neither of those is edited by hand -- the
+# previous layout kept the same names in two files and they had already drifted.
+#
+# `group` is the only field ssh itself has no way to express. It is what gives
+# the picker its tree, and it is free text: use whatever path reads well.
+#
+# Keys are snake_case here and become ssh directives as written
+# (proxy_jump -> ProxyJump), so any option ssh understands works without this
+# file needing to know about it.
+
+# Applied to every host. A host that sets the same key overrides it.
+defaults:
+  user: dor1
+  preferred_authentications: publickey
+
+hosts:
+  # A bastion: reached directly, and named by proxy_jump below.
+  - name: example-bastion
+    group: EXAMPLE/MGMT
+    hostname: 203.0.113.10
+    port: 2222
+    identity_file: ~/.ssh/id_ed25519
+
+  # Reached through it. generate.py checks that the name exists.
+  - name: example-node1
+    group: EXAMPLE/MGMT/Hypervisor
+    hostname: 10.0.0.11
+    proxy_jump: example-bastion
+
+  # Anything ssh accepts can go on a host.
+  - name: example-node2
+    group: EXAMPLE/MGMT/Hypervisor
+    hostname: 10.0.0.12
+    proxy_jump: example-bastion
+    user: root
+    forward_agent: yes
