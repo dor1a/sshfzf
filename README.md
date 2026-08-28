@@ -22,7 +22,15 @@ tracked file is `hosts.example.yaml`, so a fork's host list never lands in a
 commit. Point `SSHFZF_HOSTS_YAML` elsewhere to keep it outside the repo
 entirely.
 
-It runs on WSL, macOS and any Linux — Python and zsh, nothing platform-specific.
+## Where it runs
+
+zsh and Python, so WSL, macOS and any Linux.
+
+⚠️ **On Windows, run it inside WSL.** There is no PowerShell version. Windows
+Terminal hosts the WSL shell, which is where `sshfzf` lives; the ssh config it
+generates is WSL's `~/.ssh/config`, not the one under `%USERPROFILE%`.
+
+Keeping to one side is deliberate rather than lazy — see the last section.
 
 ## Setup
 
