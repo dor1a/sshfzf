@@ -79,17 +79,26 @@ faster than a command.
 
 ## Importing from MobaXterm
 
+MobaXterm is Windows-only, so its config lives on the Windows side:
+
+```
+%APPDATA%\MobaXterm\MobaXterm.ini
+```
+
+From WSL that is reachable under `/mnt/c`, which is where this is usually run:
+
 ```sh
-./import-mobaxterm.py ~/AppData/Roaming/MobaXterm/MobaXterm.ini -o hosts.yaml
+./import-mobaxterm.py "/mnt/c/Users/<you>/AppData/Roaming/MobaXterm/MobaXterm.ini" \
+  -o hosts.yaml
 ```
 
 `SubRep=` in each `[Bookmarks_N]` section is the folder path, so the tree comes
 across without being retyped.
 
 ⚠️ Check `user` afterwards. MobaXterm stores a credential *name* where the user
-belongs, and the two need not match — `aws_admin` logging in as `admin`
-is exactly the case that catches you. `proxy_jump` and `identity_file` do not
-exist in MobaXterm's format and have to be added.
+belongs — a label in its own vault, which is not required to equal the account
+it logs in as. `proxy_jump`, `identity_file` and passwords are not in the
+format at all.
 
 ## The host schema
 

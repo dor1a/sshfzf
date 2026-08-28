@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Turn MobaXterm's saved sessions into hosts.yaml.
+r"""Turn MobaXterm's saved sessions into hosts.yaml.
 
-MobaXterm keeps sessions in MobaXterm.ini, one `[Bookmarks_N]` section per
-folder. `SubRep=` in each section is the folder path, which is exactly the tree
+MobaXterm is Windows-only and keeps its sessions in
+`%APPDATA%\MobaXterm\MobaXterm.ini`, one `[Bookmarks_N]` section per folder.
+From WSL that path is under `/mnt/c`. `SubRep=` in each section is the folder path, which is exactly the tree
 hosts.yaml calls `group` -- so the structure comes across without being retyped.
 
-    ./import-mobaxterm.py <MobaXterm.ini>            print YAML to stdout
+    ./import-mobaxterm.py "/mnt/c/Users/<you>/AppData/Roaming/MobaXterm/MobaXterm.ini"
     ./import-mobaxterm.py <MobaXterm.ini> -o hosts.yaml
 
 The number after the first `#` is the **icon**, not the session type -- these
@@ -14,11 +15,11 @@ an SSH session is its field layout: `%host%port%user%`, with a port that parses
 as a number. Anything else is skipped with a note.
 
 Passwords are not read. MobaXterm writes a credential *name* in brackets where
-the user should be (`[admin]`), and that name is a label in its own vault,
-not the account. Often the two match; `aws_admin` logging in as `admin`
-is the case that shows they need not. The names come across as `user` and the
-importer prints every distinct one at the end -- check that list against the
-real accounts before connecting.
+the user should be. That name is a label in its own vault and is not required
+to equal the account it logs in as -- a credential named for the environment
+rather than the login is the case that catches you. The names come across as
+`user` and the importer prints every distinct one at the end; check that list
+against the real accounts before connecting.
 """
 
 import argparse
