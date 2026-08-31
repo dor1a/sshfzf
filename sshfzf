@@ -1,0 +1,89 @@
+#!/usr/bin/env zsh
+#
+# sshfzf — pick a host from the generated tree and connect.
+#
+# Reads ~/.ssh/hosts, which generate.py writes from hosts.yaml. Nothing here
+# parses the ssh config, so this file stays the same however hosts.yaml grows.
+#
+# An executable rather than a sourced function, so no shell rc has to know this
+# tool exists. Link it onto PATH:
+#
+#     ln -sfn <repo>/sshfzf ~/.local/bin/sshfzf
+#
+# Being a file is also what makes ctrl-t work at all. fzf runs its child
+# commands with `$SHELL -c`, and a non-interactive shell never reads ~/.zshrc,
+# so a function defined there is invisible to the preview. A file called by
+# path is not.
+
+# Resolved through the symlink, so the copy on PATH still finds generate.py
+# beside the real file. Read at the top level on purpose: inside a function zsh
+# sets $0 to the function's own name.
+SELF=${0:A}
+REPO=${SELF:h}
+
+: "${SSHFZF_HOSTS:=$HOME/.ssh/hosts}"
+
+# The whole list at once, for when the question is "what do I have" rather than
+# "connect me to this one".
+sshfzf-tree() {
+  # generate.py reads hosts.yaml, which is the truth, so it gets first refusal.
+  # It needs PyYAML and a hosts.yaml though, and a machine that only consumes
+  # the generated files has neither -- so fall through on failure instead of
+  # handing back its empty output. Being executable is not the same as being
+  # able to run.
+  local gen="$REPO/generate.py"
+  [[ -x $gen ]] && "$gen" --tree 2>/dev/null && return
+  # Keyed on the path so far, not on depth and name. A name recurs at the same
+  # depth under different parents -- two sites that both have an MGMT below
+  # them, say -- and keying on depth alone treats the second one as already
+  # printed, leaving its hosts hanging under whichever branch came first.
+  grep -vE '^\s*(#|$)' "$SSHFZF_HOSTS" | awk -F/ '
+    { indent = ""; path = ""
+      for (i = 1; i < NF; i++) {
+        path = path "/" $i
+        if (!(path in seen)) { print indent $i; seen[path] = 1 }
+        indent = indent "  "
+      }
+      print indent $NF
+    }'
+}
+
+sshfzf() {
+  if [[ ! -r "$SSHFZF_HOSTS" ]]; then
+    print -u2 "sshfzf: no $SSHFZF_HOSTS — run generate.py first"
+    return 1
+  fi
+  command -v fzf >/dev/null || { print -u2 "sshfzf: fzf is not installed"; return 1 }
+
+  local selected host
+  # The preview is `ssh -G`, which resolves the config the way ssh will: the
+  # HostName a pattern expands to, the user, the jump host. That is the thing
+  # worth seeing before connecting, and it needs no network.
+  #
+  # {} is fzf's placeholder and arrives already single-quoted. The group is
+  # stripped with ${h##*/} rather than a zsh subscript because this string is
+  # run by $SHELL, which is not zsh on every machine.
+  selected=$(
+    grep -vE '^\s*(#|$)' "$SSHFZF_HOSTS" |
+      fzf --layout=reverse --height=60% --border \
+          --prompt='ssh > ' \
+          --header='enter to connect · ctrl-t for the tree' \
+          --preview='h={}; ssh -G "${h##*/}" 2>/dev/null |
+                     grep -iE "^(hostname|user|port|proxyjump|identityfile) " ' \
+          --preview-window='right,45%,wrap' \
+          --bind="ctrl-t:change-preview('$SELF' --tree)"
+  ) || return 0
+
+  # Only the last path segment is the ssh host; the rest is the group.
+  host=${${(s:/:)selected}[-1]}
+  [[ -n "$host" ]] && ssh "$host"
+}
+
+# No completion function here: sshfzf takes no arguments worth completing, and
+# zsh already completes `ssh` from the generated ~/.ssh/config on its own.
+
+case "$1" in
+  --tree) sshfzf-tree ;;
+  '')     sshfzf ;;
+  *)      print -u2 "sshfzf: unknown argument: $1"; exit 2 ;;
+esac

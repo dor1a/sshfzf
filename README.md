@@ -40,16 +40,18 @@ pip install --user pyyaml     # if `python3 -c "import yaml"` fails
 
 cp hosts.example.yaml hosts.yaml   # hosts.yaml is gitignored — yours stays local
 ./generate.py                      # writes ~/.ssh/config and ~/.ssh/hosts
-ln -sfn "$PWD/sshfzf.zsh" ~/.oh-my-zsh/custom/sshfzf.zsh
-exec zsh
+ln -sfn "$PWD/sshfzf" ~/.local/bin/sshfzf
 ```
 
-Without oh-my-zsh, source it from `~/.zshrc` instead:
+`sshfzf` is an executable rather than a shell function, so no rc file has to
+know it exists. Link it into any directory already on `PATH` and it runs from
+any shell. macOS does not put `~/.local/bin` on `PATH`, so add it there if
+`which sshfzf` comes up empty.
 
-```sh
-export SSHFZF_REPO=<this repo>          # optional, enables ctrl-t tree
-source "$SSHFZF_REPO/sshfzf.zsh"
-```
+Being a file is also what makes `ctrl-t` work. fzf runs its child commands with
+`$SHELL -c`, and that shell is not interactive, so it never reads `~/.zshrc` —
+a function defined there is invisible to the preview. The binding calls this
+file by path instead.
 
 ⚠️ `generate.py` will not overwrite an `~/.ssh/config` it did not write. Move an
 existing one aside once its hosts are in `hosts.yaml`.
