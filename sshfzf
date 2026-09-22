@@ -76,7 +76,12 @@ sshfzf() {
 
   # Only the last path segment is the ssh host; the rest is the group.
   host=${${(s:/:)selected}[-1]}
-  [[ -n "$host" ]] && ssh "$host"
+  [[ -n "$host" ]] || return 0
+  if [[ "$1" == --select ]]; then
+    print -r -- "$host"
+  else
+    ssh "$host"
+  fi
 }
 
 # No completion function here: sshfzf takes no arguments worth completing, and
@@ -84,6 +89,7 @@ sshfzf() {
 
 case "$1" in
   --tree) sshfzf-tree ;;
+  --select) sshfzf --select ;;
   '')     sshfzf ;;
   *)      print -u2 "sshfzf: unknown argument: $1"; exit 2 ;;
 esac

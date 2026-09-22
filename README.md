@@ -63,11 +63,42 @@ existing one aside once its hosts are in `hosts.yaml`.
 | `sshfzf` | pick and connect |
 | `enter` | connect to the highlighted host |
 | `ctrl-t` | swap the preview for the whole tree |
-| `sshfzf-tree` | print the tree and nothing else |
+| `sshfzf --tree` | print the tree and nothing else |
+| `sshfzf --select` | print the selected SSH alias without connecting; cancellation prints nothing |
 
 The preview runs `ssh -G`, which resolves the config the way ssh itself will —
 the hostname a pattern expands to, the user, the jump host. It touches no
 network, so it is instant even for hosts behind a bastion.
+
+### Recall the selected connection with Up
+
+An executable cannot update its parent shell's in-memory history. For zsh,
+add this wrapper to `~/.zshrc`. It uses the executable for selection and records
+`ssh user@alias` before connecting, so Up recalls that command even after Ctrl-C.
+The user comes from `ssh -G`; the alias retains its configured port and jump host.
+Cancelling the picker adds no SSH command to history.
+
+```zsh
+sshfzf() {
+  if (( $# )); then
+    command sshfzf "$@"
+    return $?
+  fi
+  local selected ssh_user target config
+  selected=$(command sshfzf --select) || return $?
+  [[ -n "$selected" ]] || return 0
+  config=$(command ssh -G "$selected") || return $?
+  ssh_user=$(print -r -- "$config" | awk '$1 == "user" {print $2; exit}')
+  [[ -n "$ssh_user" ]] || return 1
+  target="$ssh_user@$selected"
+  print -s -- ssh "$target"
+  command ssh "$target"
+}
+```
+
+Run `source ~/.zshrc` in existing terminals. New shells load it automatically.
+Update the executable first: the wrapper requires `--select`. Calling
+`command sshfzf` bypasses the wrapper and retains the standalone behavior.
 
 ## Managing hosts
 
