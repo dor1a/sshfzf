@@ -178,3 +178,7 @@ If both are in use, each side needs its own `~/.ssh` — a Windows key read
 through `/mnt/c` shows as `0777` because DrvFs does not carry Unix modes, and
 `ssh` refuses a private key that permissive. Generating into WSL alone avoids
 the question; making Windows work too means a second key pair, not a symlink.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
