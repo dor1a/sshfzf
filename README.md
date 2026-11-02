@@ -36,7 +36,6 @@ Keeping to one side is deliberate rather than lazy — see the last section.
 
 ```sh
 sudo apt install fzf          # or: brew install fzf
-pip install --user pyyaml     # if `python3 -c "import yaml"` fails
 
 cp hosts.example.yaml hosts.yaml   # hosts.yaml is gitignored — yours stays local
 ./generate.py                      # writes ~/.ssh/config and ~/.ssh/hosts
@@ -117,6 +116,11 @@ usage error.
 `hosts.yaml` stays plain YAML and edits are made on the text, so comments and
 ordering survive — which means editing it by hand still works when that is
 faster than a command.
+
+Nothing beyond the Python standard library is needed. `generate.py` reads the
+shape the commands write: `defaults:` and `hosts:`, then one `key: value` per
+line. Quotes and trailing `# comments` are fine; anchors and multi-line values
+are not, and a line it cannot read stops it with the line number.
 
 ## Importing from MobaXterm
 
