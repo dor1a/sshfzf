@@ -14,6 +14,14 @@ by hand, and by the time it was looked at they had already drifted apart.
     ./generate.py --check      validate hosts.yaml and exit
     ./generate.py --dry-run    print what would be written
 
+`sshfzf generate`, `sshfzf add`, `sshfzf set` and `sshfzf remove` run this file
+with the same arguments, which is how a Homebrew install reaches it.
+
+hosts.yaml is read from $SSHFZF_HOSTS_YAML, or else from
+${XDG_CONFIG_HOME:-~/.config}/sshfzf/hosts.yaml. It lives outside this directory
+so that whatever replaces the directory, a Homebrew upgrade for one, leaves the
+host list alone.
+
 Refuses to overwrite an ~/.ssh/config that does not carry the marker below, so a
 hand-written config is never clobbered by mistake.
 """
@@ -21,10 +29,13 @@ hand-written config is never clobbered by mistake.
 import argparse
 import os
 import pathlib
+import shlex
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent
-SOURCE = pathlib.Path(os.environ.get("SSHFZF_HOSTS_YAML") or REPO / "hosts.yaml")
+EXAMPLE = REPO / "hosts.example.yaml"
+CONFIG_HOME = pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config")
+SOURCE = pathlib.Path(os.environ.get("SSHFZF_HOSTS_YAML") or CONFIG_HOME / "sshfzf" / "hosts.yaml")
 SSH_DIR = pathlib.Path.home() / ".ssh"
 CONFIG = SSH_DIR / "config"
 HOSTLIST = SSH_DIR / "hosts"
@@ -85,8 +96,18 @@ def parse(text):
     return doc
 
 
+def source_text():
+    """hosts.yaml as text. On a fresh machine there is none yet, so say where
+    the example is rather than dying with a traceback."""
+    if not SOURCE.is_file():
+        sys.exit(f"no {SOURCE}\nstart from the example:\n"
+                 f"  mkdir -p -m 700 {shlex.quote(str(SOURCE.parent))}\n"
+                 f"  install -m 600 {shlex.quote(str(EXAMPLE))} {shlex.quote(str(SOURCE))}")
+    return SOURCE.read_text(encoding="utf-8")
+
+
 def load():
-    doc = parse(SOURCE.read_text(encoding="utf-8"))
+    doc = parse(source_text())
     defaults = doc.get("defaults") or {}
     hosts = doc.get("hosts") or []
     if not hosts:
@@ -219,7 +240,7 @@ def pick(prompt, multi=False):
 
 
 def read_source():
-    return SOURCE.read_text(encoding="utf-8").splitlines(keepends=True)
+    return source_text().splitlines(keepends=True)
 
 
 def find_block(lines, name):

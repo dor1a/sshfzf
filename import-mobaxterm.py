@@ -7,7 +7,7 @@ From WSL that path is under `/mnt/c`. `SubRep=` in each section is the folder pa
 hosts.yaml calls `group` -- so the structure comes across without being retyped.
 
     ./import-mobaxterm.py "/mnt/c/Users/<you>/AppData/Roaming/MobaXterm/MobaXterm.ini"
-    ./import-mobaxterm.py <MobaXterm.ini> -o hosts.yaml
+    ./import-mobaxterm.py <MobaXterm.ini> -o "$hosts"   # the path the README works out
 
 The number after the first `#` is the **icon**, not the session type -- these
 sessions carry six different ones and every one of them is SSH. What separates

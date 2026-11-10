@@ -6,9 +6,13 @@
 # parses the ssh config, so this file stays the same however hosts.yaml grows.
 #
 # An executable rather than a sourced function, so no shell rc has to know this
-# tool exists. Link it onto PATH:
+# tool exists. Homebrew puts it on PATH; from a clone, link it there:
 #
 #     ln -sfn <repo>/sshfzf ~/.local/bin/sshfzf
+#
+# It is also the way into generate.py, which a Homebrew install keeps off PATH:
+# `sshfzf generate`, `sshfzf add`, `sshfzf set` and `sshfzf remove` hand their
+# arguments to it.
 #
 # Being a file is also what makes ctrl-t work at all. fzf runs its child
 # commands with `$SHELL -c`, and a non-interactive shell never reads ~/.zshrc,
@@ -27,10 +31,10 @@ REPO=${SELF:h}
 # "connect me to this one".
 sshfzf-tree() {
   # generate.py reads hosts.yaml, which is the truth, so it gets first refusal.
-  # It needs PyYAML and a hosts.yaml though, and a machine that only consumes
-  # the generated files has neither -- so fall through on failure instead of
-  # handing back its empty output. Being executable is not the same as being
-  # able to run.
+  # It needs a hosts.yaml though, and a machine that only consumes the
+  # generated files has none -- so fall through on failure instead of handing
+  # back its empty output. Being executable is not the same as being able to
+  # run.
   local gen="$REPO/generate.py"
   [[ -x $gen ]] && "$gen" --tree 2>/dev/null && return
   # Keyed on the path so far, not on depth and name. A name recurs at the same
@@ -50,7 +54,7 @@ sshfzf-tree() {
 
 sshfzf() {
   if [[ ! -r "$SSHFZF_HOSTS" ]]; then
-    print -u2 "sshfzf: no $SSHFZF_HOSTS — run generate.py first"
+    print -u2 "sshfzf: no $SSHFZF_HOSTS — run sshfzf generate first"
     return 1
   fi
   command -v fzf >/dev/null || { print -u2 "sshfzf: fzf is not installed"; return 1 }
@@ -84,12 +88,15 @@ sshfzf() {
   fi
 }
 
-# No completion function here: sshfzf takes no arguments worth completing, and
-# zsh already completes `ssh` from the generated ~/.ssh/config on its own.
+# No completion function here: the subcommands are four words and generate.py
+# --help lists their options, and zsh already completes `ssh` from the generated
+# ~/.ssh/config on its own.
 
 case "$1" in
   --tree) sshfzf-tree ;;
   --select) sshfzf --select ;;
+  generate) shift; exec "$REPO/generate.py" "$@" ;;
+  add|set|remove) exec "$REPO/generate.py" "$@" ;;
   '')     sshfzf ;;
   *)      print -u2 "sshfzf: unknown argument: $1"; exit 2 ;;
 esac

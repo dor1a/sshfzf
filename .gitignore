@@ -1,4 +1,4 @@
-# Your real host list. hosts.example.yaml is the tracked schema.
+# A real host list lives in ~/.config/sshfzf. Never commit one copied here.
 hosts.yaml
 
 # Generated into ~/.ssh by generate.py, never kept here

@@ -4,8 +4,8 @@ Pick an SSH host from a tree and connect. One file describes every host;
 `~/.ssh/config` and the picker's list are both generated from it.
 
 ```
-hosts.yaml ──generate.py──┬──> ~/.ssh/config    what ssh reads
-                          └──> ~/.ssh/hosts     what sshfzf reads
+~/.config/sshfzf/hosts.yaml ──sshfzf generate──┬──> ~/.ssh/config    what ssh reads
+                                               └──> ~/.ssh/hosts     what sshfzf reads
 ```
 
 ## Why it is built this way
@@ -17,14 +17,15 @@ already drifted — sixty-nine entries each, one of them out of step, and the
 deployed config had a single host in it while the list offered sixty-eight.
 
 So `hosts.yaml` is the only file edited by hand. Both outputs are generated,
-which makes drift impossible rather than unlikely. It is gitignored — the
-tracked file is `hosts.example.yaml`, so a fork's host list never lands in a
-commit. Point `SSHFZF_HOSTS_YAML` elsewhere to keep it outside the repo
-entirely.
+which makes drift impossible rather than unlikely. It lives in
+`~/.config/sshfzf/` (or `$XDG_CONFIG_HOME/sshfzf/`), away from the code, so an
+upgrade never touches it and a fork's host list never lands in a commit.
+`SSHFZF_HOSTS_YAML` points it anywhere else.
 
 ## Where it runs
 
-zsh and Python, so WSL, macOS and any Linux.
+zsh and Python, so WSL, macOS and any Linux. On macOS, install it with
+Homebrew; elsewhere, run it from a clone.
 
 ⚠️ **On Windows, run it inside WSL.** There is no PowerShell version. Windows
 Terminal hosts the WSL shell, which is where `sshfzf` lives; the ssh config it
@@ -34,18 +35,44 @@ Keeping to one side is deliberate rather than lazy — see the last section.
 
 ## Setup
 
-```sh
-sudo apt install fzf          # or: brew install fzf
+### macOS, with Homebrew
 
-cp hosts.example.yaml hosts.yaml   # hosts.yaml is gitignored — yours stays local
-./generate.py                      # writes ~/.ssh/config and ~/.ssh/hosts
-ln -sfn "$PWD/sshfzf" ~/.local/bin/sshfzf
+```sh
+brew install dor1a/tap/sshfzf          # fzf comes with it
+
+hosts="${SSHFZF_HOSTS_YAML:-${XDG_CONFIG_HOME:-$HOME/.config}/sshfzf/hosts.yaml}"
+mkdir -p -m 700 "$(dirname "$hosts")"
+install -m 600 "$(brew --prefix sshfzf)/libexec/hosts.example.yaml" "$hosts"
+sshfzf generate                        # writes ~/.ssh/config and ~/.ssh/hosts
 ```
+
+`$hosts` is worked out in the same order `sshfzf` uses: `SSHFZF_HOSTS_YAML`
+if set, then `$XDG_CONFIG_HOME/sshfzf/hosts.yaml`, then
+`~/.config/sshfzf/hosts.yaml`.
+
+`brew upgrade sshfzf` replaces the code and leaves `hosts.yaml` alone.
+
+### WSL and Linux, from a clone
+
+```sh
+sudo apt install fzf
+git clone https://github.com/dor1a/sshfzf.git ~/sshfzf
+
+hosts="${SSHFZF_HOSTS_YAML:-${XDG_CONFIG_HOME:-$HOME/.config}/sshfzf/hosts.yaml}"
+mkdir -p -m 700 "$(dirname "$hosts")"
+install -m 600 ~/sshfzf/hosts.example.yaml "$hosts"
+mkdir -p ~/.local/bin
+ln -sfn ~/sshfzf/sshfzf ~/.local/bin/sshfzf
+sshfzf generate
+```
+
+`git pull` updates it. A clone that still keeps `hosts.yaml` beside the code
+needs it moved to `$hosts`; nothing reads the old place.
 
 `sshfzf` is an executable rather than a shell function, so no rc file has to
 know it exists. Link it into any directory already on `PATH` and it runs from
 any shell. macOS does not put `~/.local/bin` on `PATH`, so add it there if
-`which sshfzf` comes up empty.
+you run a clone on a Mac and `which sshfzf` comes up empty.
 
 Being a file is also what makes `ctrl-t` work. fzf runs its child commands with
 `$SHELL -c`, and that shell is not interactive, so it never reads `~/.zshrc` —
@@ -107,11 +134,14 @@ usage error.
 
 | | |
 |---|---|
-| `./generate.py add` | asks for each field; the group comes from an fzf list of the ones in use, or type a new path |
-| `./generate.py add <name> <group> <hostname>` | same, for scripts. `-p` port, `-u` user, `-j` proxy jump, `-i` identity file |
-| `./generate.py set` | pick one, then `-u root`, `-p 2222`, `--unset port`. Fields you do not name are left alone |
-| `./generate.py remove` | pick with tab to mark several; escape does nothing |
-| `./generate.py --tree` | the whole tree |
+| `sshfzf add` | asks for each field; the group comes from an fzf list of the ones in use, or type a new path |
+| `sshfzf add <name> <group> <hostname>` | same, for scripts. `-p` port, `-u` user, `-j` proxy jump, `-i` identity file |
+| `sshfzf set` | pick one, then `-u root`, `-p 2222`, `--unset port`. Fields you do not name are left alone |
+| `sshfzf remove` | pick with tab to mark several; escape does nothing |
+| `sshfzf generate` | regenerate after editing `hosts.yaml` by hand |
+
+These hand their arguments to `generate.py`, which a Homebrew install keeps off
+`PATH`. From a clone, `./generate.py` with the same arguments does the same.
 
 `hosts.yaml` stays plain YAML and edits are made on the text, so comments and
 ordering survive — which means editing it by hand still works when that is
@@ -133,8 +163,10 @@ MobaXterm is Windows-only, so its config lives on the Windows side:
 From WSL that is reachable under `/mnt/c`, which is where this is usually run:
 
 ```sh
-./import-mobaxterm.py "/mnt/c/Users/<you>/AppData/Roaming/MobaXterm/MobaXterm.ini" \
-  -o hosts.yaml
+hosts="${SSHFZF_HOSTS_YAML:-${XDG_CONFIG_HOME:-$HOME/.config}/sshfzf/hosts.yaml}"
+mkdir -p -m 700 "$(dirname "$hosts")"
+./import-mobaxterm.py "/mnt/c/Users/<you>/AppData/Roaming/MobaXterm/MobaXterm.ini" -o "$hosts"
+chmod 600 "$hosts"
 ```
 
 `SubRep=` in each `[Bookmarks_N]` section is the folder path, so the tree comes
@@ -155,7 +187,7 @@ hosts:
     proxy_jump: bastion
 ```
 
-Then `./generate.py`.
+Then `sshfzf generate`.
 
 `group` is the one field ssh has no equivalent for; it is what builds the tree,
 and it is free text. Everything else is an ssh option in `snake_case`:
@@ -167,9 +199,9 @@ is no list of supported keys — whatever ssh understands passes through.
 ## Checks
 
 ```sh
-./generate.py --check      # validate hosts.yaml
-./generate.py --tree       # the tree, without writing anything
-./generate.py --dry-run    # what would be written
+sshfzf generate --check      # validate hosts.yaml
+sshfzf generate --tree       # the tree, without writing anything
+sshfzf generate --dry-run    # what would be written
 ```
 
 `--check` refuses a host with no group (it would never appear in the picker), a
