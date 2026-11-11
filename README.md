@@ -1,14 +1,28 @@
+<div align="center">
+
+<img src="docs/logo.svg" alt="" width="96">
+
 # sshfzf
 
-Pick an SSH host from a tree and connect. One file describes every host;
-`~/.ssh/config` and the picker's list are both generated from it.
+**Pick an SSH host from a tree and connect**
 
-```
-~/.config/sshfzf/hosts.yaml ──sshfzf generate──┬──> ~/.ssh/config    what ssh reads
-                                               └──> ~/.ssh/hosts     what sshfzf reads
+One file describes every host; `~/.ssh/config` and the picker's list are both generated from it.<br>
+zsh and Python, on macOS, Linux and WSL.
+
+[![macOS | Linux | WSL](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20WSL-supported-555555)](#install)
+[![zsh](https://img.shields.io/badge/shell-zsh-555555)](sshfzf)
+[![Python](https://img.shields.io/badge/Python-standard%20library-3776AB?logo=python&logoColor=white)](generate.py)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+</div>
+
+```sh
+sshfzf                                    # pick a host from the tree and connect
+sshfzf add web1 prod/frontend 10.0.0.11   # add a host; ~/.ssh/config is rewritten
+sshfzf --tree                             # print the tree
 ```
 
-## Why it is built this way
+## Why it exists
 
 The first version kept a hand-maintained `.ssh/hosts` beside `.ssh/config`,
 because ssh config has no way to express a category tree. That meant writing
@@ -16,24 +30,22 @@ every host name twice, and by the time it was next opened the two files had
 already drifted — sixty-nine entries each, one of them out of step, and the
 deployed config had a single host in it while the list offered sixty-eight.
 
-So `hosts.yaml` is the only file edited by hand. Both outputs are generated,
-which makes drift impossible rather than unlikely. It lives in
+So `hosts.yaml` is the only file edited by hand. Both outputs are generated
+from it in one run, which makes drift between them impossible rather than unlikely. It lives in
 `~/.config/sshfzf/` (or `$XDG_CONFIG_HOME/sshfzf/`), away from the code, so an
 upgrade never touches it and a fork's host list never lands in a commit.
 `SSHFZF_HOSTS_YAML` points it anywhere else.
 
-## Where it runs
+## Install
 
 zsh and Python, so WSL, macOS and any Linux. On macOS, install it with
 Homebrew; elsewhere, run it from a clone.
 
-⚠️ **On Windows, run it inside WSL.** There is no PowerShell version. Windows
+**On Windows, run it inside WSL.** There is no PowerShell version. Windows
 Terminal hosts the WSL shell, which is where `sshfzf` lives; the ssh config it
 generates is WSL's `~/.ssh/config`, not the one under `%USERPROFILE%`.
-
-Keeping to one side is deliberate rather than lazy — see the last section.
-
-## Setup
+Keeping to one side is deliberate rather than lazy; see
+[Troubleshooting](#keys-are-not-shared-between-wsl-and-windows).
 
 ### macOS, with Homebrew
 
@@ -55,7 +67,7 @@ if set, then `$XDG_CONFIG_HOME/sshfzf/hosts.yaml`, then
 ### WSL and Linux, from a clone
 
 ```sh
-sudo apt install fzf
+sudo apt install fzf zsh
 git clone https://github.com/dor1a/sshfzf.git ~/sshfzf
 
 hosts="${SSHFZF_HOSTS_YAML:-${XDG_CONFIG_HOME:-$HOME/.config}/sshfzf/hosts.yaml}"
@@ -66,6 +78,10 @@ ln -sfn ~/sshfzf/sshfzf ~/.local/bin/sshfzf
 sshfzf generate
 ```
 
+`sshfzf` itself runs in zsh, which WSL's Ubuntu does not install by default.
+It also needs `python3` and the OpenSSH client (`ssh`), which most
+distributions already have; install `python3` and `openssh-client` if not.
+
 `git pull` updates it. A clone that still keeps `hosts.yaml` beside the code
 needs it moved to `$hosts`; nothing reads the old place.
 
@@ -74,15 +90,7 @@ know it exists. Link it into any directory already on `PATH` and it runs from
 any shell. macOS does not put `~/.local/bin` on `PATH`, so add it there if
 you run a clone on a Mac and `which sshfzf` comes up empty.
 
-Being a file is also what makes `ctrl-t` work. fzf runs its child commands with
-`$SHELL -c`, and that shell is not interactive, so it never reads `~/.zshrc` —
-a function defined there is invisible to the preview. The binding calls this
-file by path instead.
-
-⚠️ `generate.py` will not overwrite an `~/.ssh/config` it did not write. Move an
-existing one aside once its hosts are in `hosts.yaml`.
-
-## Use
+## Usage
 
 | | |
 |---|---|
@@ -126,17 +134,18 @@ Run `source ~/.zshrc` in existing terminals. New shells load it automatically.
 Update the executable first: the wrapper requires `--select`. Calling
 `command sshfzf` bypasses the wrapper and retains the standalone behavior.
 
-## Managing hosts
+### Managing hosts
 
 Every command edits `hosts.yaml` and regenerates immediately, so the ssh config
-is never a change behind. Omit the name and you get a picker rather than a
-usage error.
+is never a change behind. If the check or the write fails, `hosts.yaml` keeps
+the edit and the generated files stay as they were; fix what it reports and run
+`sshfzf generate`. Omit the name and you get a picker rather than a usage error.
 
 | | |
 |---|---|
 | `sshfzf add` | asks for each field; the group comes from an fzf list of the ones in use, or type a new path |
 | `sshfzf add <name> <group> <hostname>` | same, for scripts. `-p` port, `-u` user, `-j` proxy jump, `-i` identity file |
-| `sshfzf set` | pick one, then `-u root`, `-p 2222`, `--unset port`. Fields you do not name are left alone |
+| `sshfzf set -u root` | pick one and apply the options to it: `-u root`, `-p 2222`, `--unset port`. With no option there is nothing to change. Fields you do not name are left alone |
 | `sshfzf remove` | pick with tab to mark several; escape does nothing |
 | `sshfzf generate` | regenerate after editing `hosts.yaml` by hand |
 
@@ -145,14 +154,45 @@ These hand their arguments to `generate.py`, which a Homebrew install keeps off
 
 `hosts.yaml` stays plain YAML and edits are made on the text, so comments and
 ordering survive — which means editing it by hand still works when that is
-faster than a command.
+faster than a command. The commands find a host by its `- name: <name>` line
+as they write it, so keep that line plain: a quoted name or a comment on it
+still generates, but `set` and `remove` will not find the host.
 
-Nothing beyond the Python standard library is needed. `generate.py` reads the
-shape the commands write: `defaults:` and `hosts:`, then one `key: value` per
-line. Quotes and trailing `# comments` are fine; anchors and multi-line values
-are not, and a line it cannot read stops it with the line number.
+### The host schema
 
-## Importing from MobaXterm
+```yaml
+hosts:
+  - name: bastion
+    group: prod
+    hostname: 203.0.113.10
+  - name: web1
+    group: prod/frontend
+    hostname: 10.0.0.11
+    proxy_jump: bastion
+```
+
+Then `sshfzf generate`.
+
+`group` is the one field ssh has no equivalent for; it is what builds the tree,
+and it is free text. Everything else is an ssh option in `snake_case`:
+`proxy_jump` becomes `ProxyJump`, `identity_file` becomes `IdentityFile`. There
+is no list of supported keys — whatever ssh understands passes through.
+
+`defaults:` applies to every host, and a host that repeats a key overrides it.
+
+### Checking hosts.yaml
+
+```sh
+sshfzf generate --check      # validate hosts.yaml
+sshfzf generate --tree       # the tree, without writing anything
+sshfzf generate --dry-run    # what would be written
+```
+
+`--check` refuses a host with no group (it would never appear in the picker), a
+duplicate name (ssh silently uses the first and ignores the rest), and a
+`proxy_jump` naming a host that is not defined here.
+
+### Importing from MobaXterm
 
 MobaXterm is Windows-only, so its config lives on the Windows side:
 
@@ -172,49 +212,71 @@ chmod 600 "$hosts"
 `SubRep=` in each `[Bookmarks_N]` section is the folder path, so the tree comes
 across without being retyped.
 
-⚠️ Check `user` afterwards. MobaXterm stores a credential *name* where the user
+**Check `user` afterwards.** MobaXterm stores a credential *name* where the user
 belongs — a label in its own vault, which is not required to equal the account
 it logs in as. `proxy_jump`, `identity_file` and passwords are not in the
 format at all.
 
-## The host schema
+## How it works
 
-```yaml
-hosts:
-  - name: web1
-    group: prod/frontend
-    hostname: 10.0.0.11
-    proxy_jump: bastion
+```
+~/.config/sshfzf/hosts.yaml        the only file you edit
+        |
+        |  sshfzf generate
+        v
+~/.ssh/config                      what ssh reads
+~/.ssh/hosts                       what sshfzf reads
 ```
 
-Then `sshfzf generate`.
+`sshfzf` being a file rather than a shell function is what makes `ctrl-t` work. fzf runs its child commands with
+`$SHELL -c`, and that shell is not interactive, so it never reads `~/.zshrc` —
+a function defined there is invisible to the preview. The binding calls this
+file by path instead.
 
-`group` is the one field ssh has no equivalent for; it is what builds the tree,
-and it is free text. Everything else is an ssh option in `snake_case`:
-`proxy_jump` becomes `ProxyJump`, `identity_file` becomes `IdentityFile`. There
-is no list of supported keys — whatever ssh understands passes through.
+Nothing beyond the Python standard library is needed. `generate.py` reads the
+shape the commands write: `defaults:` and `hosts:`, then one `key: value` per
+line. Quotes and trailing `# comments` are fine; anchors and multi-line values
+are not, and a line it cannot read stops it with the line number.
 
-`defaults:` applies to every host, and a host that repeats a key overrides it.
+## Troubleshooting
 
-## Checks
+### `generate` will not overwrite `~/.ssh/config`
 
-```sh
-sshfzf generate --check      # validate hosts.yaml
-sshfzf generate --tree       # the tree, without writing anything
-sshfzf generate --dry-run    # what would be written
-```
+`generate.py` will not overwrite an `~/.ssh/config` it did not write. Move an
+existing one aside once its hosts are in `hosts.yaml`.
 
-`--check` refuses a host with no group (it would never appear in the picker), a
-duplicate name (ssh silently uses the first and ignores the rest), and a
-`proxy_jump` naming a host that is not defined here.
-
-## Keys are not shared between WSL and Windows
+### Keys are not shared between WSL and Windows
 
 If both are in use, each side needs its own `~/.ssh` — a Windows key read
 through `/mnt/c` shows as `0777` because DrvFs does not carry Unix modes, and
 `ssh` refuses a private key that permissive. Generating into WSL alone avoids
 the question; making Windows work too means a second key pair, not a symlink.
 
+## Uninstall
+
+```sh
+brew uninstall sshfzf
+```
+
+For a clone, remove the link and then the clone:
+
+```sh
+rm ~/.local/bin/sshfzf
+```
+
+`hosts.yaml` and the generated `~/.ssh/config` and `~/.ssh/hosts` stay where they
+are. Keep the config if ssh still uses it.
+
+## Development
+
+There are no automated tests. From a clone, the example file exercises the
+generator without touching your own hosts:
+
+```sh
+SSHFZF_HOSTS_YAML=hosts.example.yaml ./generate.py --check   # 3 hosts, no problems
+SSHFZF_HOSTS_YAML=hosts.example.yaml ./sshfzf --tree
+```
+
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)
