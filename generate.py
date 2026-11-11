@@ -106,8 +106,9 @@ def source_text():
     return SOURCE.read_text(encoding="utf-8")
 
 
-def load():
-    doc = parse(source_text())
+def load(text=None):
+    """defaults and hosts from hosts.yaml, or from text an edit has not written yet."""
+    doc = parse(source_text() if text is None else text)
     defaults = doc.get("defaults") or {}
     hosts = doc.get("hosts") or []
     if not hosts:
@@ -203,14 +204,20 @@ def render_tree(hosts):
     return "\n".join(lines)
 
 
-def write(path, text, mode=0o600):
-    if path == CONFIG and path.exists():
-        head = path.read_text(encoding="utf-8", errors="replace")[: len(MARKER)]
+def guard_config():
+    """Stop when ~/.ssh/config exists and this tool did not write it."""
+    if CONFIG.exists():
+        head = CONFIG.read_text(encoding="utf-8", errors="replace")[: len(MARKER)]
         if head != MARKER:
             sys.exit(
-                f"{path} was not written by this tool and will not be overwritten.\n"
+                f"{CONFIG} was not written by this tool and will not be overwritten.\n"
                 f"Move it aside first if the hosts in it are already in hosts.yaml."
             )
+
+
+def write(path, text, mode=0o600):
+    if path == CONFIG:
+        guard_config()
     SSH_DIR.mkdir(mode=0o700, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     path.chmod(mode)
@@ -243,6 +250,16 @@ def read_source():
     return source_text().splitlines(keepends=True)
 
 
+def entry_name(line):
+    """The name on a `- name:` line, read the way parse() reads it, so quotes
+    and a trailing comment do not hide the host from set and remove."""
+    text = line.strip()
+    if not text.startswith("- "):
+        return None
+    key, sep, rest = text[2:].partition(":")
+    return scalar(rest) if sep and key.strip() == "name" else None
+
+
 def find_block(lines, name):
     """Line span of one host entry, or None.
 
@@ -253,7 +270,7 @@ def find_block(lines, name):
     start = None
     for i, line in enumerate(lines):
         if start is None:
-            if line.strip() == f"- name: {name}":
+            if entry_name(line) == name:
                 start = i
             continue
         # The next entry, or the end of the hosts list.
@@ -285,8 +302,7 @@ def cmd_remove(names):
         gone.append(name)
     if missing:
         sys.exit("not in " + SOURCE.name + ": " + ", ".join(missing))
-    write_source(lines)
-    print(f"removed {', '.join(gone)} from {SOURCE.name}")
+    return lines, f"removed {', '.join(gone)} from {SOURCE.name}"
 
 
 def ask(label, default="", required=False):
@@ -369,11 +385,10 @@ def cmd_set(args):
         block = [l for l in block if not l.strip().startswith(f"{key}:")]
 
     lines[i:j] = block
-    write_source(lines)
     told = ", ".join(f"{k}={v}" for k, v in changes.items())
     if args.unset:
         told += (", " if told else "") + "unset " + ", ".join(args.unset)
-    print(f"{args.name}: {told}")
+    return lines, f"{args.name}: {told}"
 
 
 def cmd_add(args):
@@ -394,8 +409,7 @@ def cmd_add(args):
     while end > 0 and lines[end - 1].strip() == "":
         end -= 1
     lines[end:end] = ["\n"] + block if lines and lines[end - 1].strip() else block
-    write_source(lines)
-    print(f"added {args.name} to {SOURCE.name}")
+    return lines, f"added {args.name} to {SOURCE.name}"
 
 
 def main():
@@ -430,21 +444,26 @@ def main():
 
     args = ap.parse_args()
 
-    # Both edit the file and then fall through to a normal regenerate, so the
-    # ssh config never sits one change behind hosts.yaml.
+    # An edit is built in memory and checked like the file it would become. Only
+    # then are hosts.yaml and the ssh config written, so a refused edit changes
+    # nothing and the ssh config never sits one change behind hosts.yaml.
+    edit = None
     if args.cmd == "add":
         # Naming three positionals is fine in a script and unhelpful by hand.
-        cmd_add(args if args.name else cmd_add_interactive())
+        edit = cmd_add(args if args.name else cmd_add_interactive())
     elif args.cmd == "remove":
-        cmd_remove(args.name or pick("remove", multi=True))
+        edit = cmd_remove(args.name or pick("remove", multi=True))
     elif args.cmd == "set":
         if not args.name:
             args.name = pick("set")[0]
-        cmd_set(args)
+        edit = cmd_set(args)
 
-    defaults, hosts = load()
+    defaults, hosts = load("".join(edit[0]) if edit else None)
     validate(hosts)
 
+    if args.check or args.tree or args.dry_run:
+        if edit:
+            print(f"{edit[1]} (preview only, {SOURCE.name} is unchanged)")
     if args.check:
         print(f"{len(hosts)} hosts, no problems")
         return
@@ -457,6 +476,10 @@ def main():
         print(f"=== {CONFIG}\n{config}\n=== {HOSTLIST}\n{hostlist}", end="")
         return
 
+    guard_config()
+    if edit:
+        write_source(edit[0])
+        print(edit[1])
     write(CONFIG, config)
     write(HOSTLIST, hostlist, mode=0o644)
     print(f"{len(hosts)} hosts")

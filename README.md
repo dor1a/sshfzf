@@ -137,9 +137,11 @@ Update the executable first: the wrapper requires `--select`. Calling
 ### Managing hosts
 
 Every command edits `hosts.yaml` and regenerates immediately, so the ssh config
-is never a change behind. If the check or the write fails, `hosts.yaml` keeps
-the edit and the generated files stay as they were; fix what it reports and run
-`sshfzf generate`. Omit the name and you get a picker rather than a usage error.
+is never a change behind. The edit is checked before anything is written: if
+`--check` would refuse it, or `~/.ssh/config` is not one sshfzf wrote, the
+command stops and `hosts.yaml` and the generated files stay as they were.
+`sshfzf generate --dry-run add …` (or `set`, `remove`) shows the result and
+writes nothing. Omit the name and you get a picker rather than a usage error.
 
 | | |
 |---|---|
@@ -154,9 +156,9 @@ These hand their arguments to `generate.py`, which a Homebrew install keeps off
 
 `hosts.yaml` stays plain YAML and edits are made on the text, so comments and
 ordering survive — which means editing it by hand still works when that is
-faster than a command. The commands find a host by its `- name: <name>` line
-as they write it, so keep that line plain: a quoted name or a comment on it
-still generates, but `set` and `remove` will not find the host.
+faster than a command. The commands find a host by its `- name:` line, read
+the same way the generator reads it, so a quoted name or a comment on that line
+is fine.
 
 ### The host schema
 
